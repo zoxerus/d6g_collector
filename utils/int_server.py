@@ -6,7 +6,7 @@ import os
 from scapy.all import sniff
 from scapy.all import Packet
 from scapy.all import UDP
-from scapy.all import XByteField, ShortField, BitField
+from scapy.all import XByteField, ShortField, BitField, PacketListField
 from scapy.all import bind_layers
 
 import influxdb_client, os, time
@@ -22,13 +22,22 @@ parser.add_argument('-p','--port', help='port to listen to',
 args = parser.parse_args()
 
 
-# a class for defining the INT header.
+# a class for defining the INT header.   
 class INT_MD(Packet):
     name = 'INT_MD'
     fields_desc = [
-        ShortField(name='node_id', default=0),
-        ShortField(name='flow_id', default=0),
-        BitField(name='delay', default=0, size=64)
+        BitField(name='flow_id', default=0, size=16),
+        BitField(name='delay', default=0, size=64),
+        BitField(name='node_id', default=0, size=16)
+    ]
+    def extract_padding(self, s):
+        return '', s
+
+
+class INT_AGG(Packet):
+    name = "INT_AGG"
+    fields_desc = [
+        PacketListField('aggregated_reports', None, INT_MD, count_from= lambda x: 16)
     ]
 
 # need to generate a token for influx_db and save it as a global system variable
@@ -47,7 +56,7 @@ def handle_pkt(pkt):
     if UDP in pkt and pkt[UDP].dport == args.port:
 
         # get int data from received packet.
-        data = pkt[INT_MD]
+        data = pkt[INT_AGG]
         
         # print the int data
         data.show2()
@@ -70,7 +79,7 @@ def main():
     # in this case it's after UDP header when the UDP dstPort is equal to
     # the set value in the bind_layers function 
     # (in this case the default port is 3500)
-    bind_layers(UDP, INT_MD, dport=args.port)  
+    bind_layers(UDP, INT_AGG, dport=args.port)  
     
     iface = args.interface
     print(("sniffing on %s" % iface))
